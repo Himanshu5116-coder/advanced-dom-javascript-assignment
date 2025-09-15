@@ -1,0 +1,210 @@
+document.addEventListener('DOMContentLoaded', () => {
+    // DOM Elements
+    const contactForm = document.getElementById('contactForm');
+    const nameInput = document.getElementById('name');
+    const emailInput = document.getElementById('email');
+    const messageInput = document.getElementById('message');
+    const successMessage = document.getElementById('successMessage');
+    const messageList = document.getElementById('messageList');
+    const emptyState = document.getElementById('emptyState');
+
+    // --- UTILITY FUNCTIONS ---
+
+    /**
+     * Debounce function to limit the rate at which a function gets called.
+     * @param {Function} func The function to debounce.
+     * @param {number} delay The delay in milliseconds.
+     * @returns {Function} The debounced function.
+     */
+    const debounce = (func, delay) => {
+        let timeoutId;
+        return (...args) => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                func.apply(this, args);
+            }, delay);
+        };
+    };
+
+    /**
+     * Shows an error message for a given input element.
+     * @param {HTMLElement} input The input element.
+     * @param {string} message The error message to display.
+     */
+    const showError = (input, message) => {
+        const errorElement = input.nextElementSibling;
+        errorElement.textContent = message;
+    };
+
+    /**
+     * Clears the error message for a given input element.
+     * @param {HTMLElement} input The input element.
+     */
+    const clearError = (input) => {
+        const errorElement = input.nextElementSibling;
+        errorElement.textContent = '';
+    };
+
+    // --- VALIDATION LOGIC ---
+
+    const validateName = () => {
+        const value = nameInput.value.trim();
+        if (value.length < 2) {
+            showError(nameInput, 'Name must be at least 2 characters long.');
+            return false;
+        }
+        clearError(nameInput);
+        return true;
+    };
+
+    const validateEmail = () => {
+        const value = emailInput.value.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+            showError(emailInput, 'Please enter a valid email address.');
+            return false;
+        }
+        clearError(emailInput);
+        return true;
+    };
+
+    const validateMessage = () => {
+        const value = messageInput.value.trim();
+        if (value.length < 10) {
+            showError(messageInput, 'Message must be at least 10 characters long.');
+            return false;
+        }
+        clearError(messageInput);
+        return true;
+    };
+
+    const validateForm = () => {
+        // Run all validations and return true if all are valid
+        const isNameValid = validateName();
+        const isEmailValid = validateEmail();
+        const isMessageValid = validateMessage();
+        return isNameValid && isEmailValid && isMessageValid;
+    };
+
+
+    // --- LOCALSTORAGE & RENDERING ---
+
+    /**
+     * Retrieves messages from localStorage, handling potential errors.
+     * @returns {Array} An array of message objects.
+     */
+    const getMessagesFromStorage = () => {
+        try {
+            const messagesJSON = localStorage.getItem('messages');
+            return messagesJSON ? JSON.parse(messagesJSON) : [];
+        } catch (error) {
+            console.error('Error reading from localStorage:', error);
+            return [];
+        }
+    };
+
+    /**
+     * Saves an array of messages to localStorage.
+     * @param {Array} messages The array of messages to save.
+     */
+    const saveMessagesToStorage = (messages) => {
+        try {
+            localStorage.setItem('messages', JSON.stringify(messages));
+        } catch (error) {
+            console.error('Error saving to localStorage:', error);
+        }
+    };
+
+    /**
+     * Renders all messages to the DOM.
+     */
+    const renderMessages = () => {
+        const messages = getMessagesFromStorage();
+        messageList.innerHTML = ''; // Clear existing list
+
+        if (messages.length === 0) {
+            emptyState.style.display = 'block';
+            messageList.style.display = 'none';
+        } else {
+            emptyState.style.display = 'none';
+            messageList.style.display = 'block';
+
+            messages.sort((a, b) => b.timestamp - a.timestamp); // Show newest first
+
+            messages.forEach(msg => {
+                const li = document.createElement('li');
+                li.className = 'message-item';
+
+                // Format timestamp for readability
+                const sentDate = new Date(msg.timestamp).toLocaleString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: 'numeric', minute: '2-digit', hour12: true
+                });
+
+                li.innerHTML = `
+                    <p><strong>From:</strong> ${msg.name} (${msg.email})</p>
+                    <p><strong>Message:</strong> ${msg.message}</p>
+                    <span class="timestamp">Sent: ${sentDate}</span>
+                    <button class="delete-btn" data-timestamp="${msg.timestamp}" title="Delete Message">X</button>
+                `;
+                messageList.appendChild(li);
+            });
+        }
+    };
+
+    // --- EVENT LISTENERS ---
+
+    // Debounced real-time validation on input fields
+    nameInput.addEventListener('input', debounce(validateName, 300));
+    emailInput.addEventListener('input', debounce(validateEmail, 300));
+    messageInput.addEventListener('input', debounce(validateMessage, 300));
+
+    // Form submission handler
+    contactForm.addEventListener('submit', (event) => {
+        event.preventDefault(); // Prevent default page reload
+
+        if (validateForm()) {
+            // Create message object
+            const newMessage = {
+                name: nameInput.value.trim(),
+                email: emailInput.value.trim(),
+                message: messageInput.value.trim(),
+                timestamp: Date.now() // Unique ID and sort key
+            };
+
+            // Save to localStorage
+            const messages = getMessagesFromStorage();
+            messages.push(newMessage);
+            saveMessagesToStorage(messages);
+
+            // Update UI
+            renderMessages();
+            contactForm.reset(); // Clear form fields
+            Object.values(contactForm.elements).forEach(clearError); // Clear any lingering errors
+
+            // Show success message
+            successMessage.textContent = '✅ Success! Your message has been sent and saved.';
+            successMessage.style.display = 'block';
+            setTimeout(() => {
+                successMessage.style.display = 'none';
+            }, 4000);
+        }
+    });
+
+    // Event delegation for deleting messages
+    messageList.addEventListener('click', (event) => {
+        if (event.target.classList.contains('delete-btn')) {
+            const timestampToDelete = event.target.getAttribute('data-timestamp');
+            
+            let messages = getMessagesFromStorage();
+            // Filter out the message to be deleted
+            messages = messages.filter(msg => msg.timestamp.toString() !== timestampToDelete);
+            
+            saveMessagesToStorage(messages);
+            renderMessages();
+        }
+    });
+
+    // --- INITIALIZATION ---
+    renderMessages(); // Initial render on page load
+});
